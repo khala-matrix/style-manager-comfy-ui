@@ -68,7 +68,8 @@ class TestImageDecode:
         mock_client.images.generate.return_value = self._make_fake_response(64, 64, n=1)
 
         result = self.node.generate(
-            api_key="test-key", prompt="test", size="1024x1024",
+            api_key="test-key", base_url="https://api.openai.com/v1",
+            prompt="test", size="1024x1024",
             quality="auto", background="opaque", n=1, output_format="png"
         )
 
@@ -84,7 +85,8 @@ class TestImageDecode:
         mock_client.images.generate.return_value = self._make_fake_response(64, 64, n=3)
 
         result = self.node.generate(
-            api_key="test-key", prompt="test", size="1024x1024",
+            api_key="test-key", base_url="https://api.openai.com/v1",
+            prompt="test", size="1024x1024",
             quality="auto", background="opaque", n=3, output_format="png"
         )
 
@@ -97,7 +99,8 @@ class TestImageDecode:
         mock_client.images.generate.return_value = self._make_fake_response(64, 64, n=1, mode="RGBA")
 
         result = self.node.generate(
-            api_key="test-key", prompt="test", size="1024x1024",
+            api_key="test-key", base_url="https://api.openai.com/v1",
+            prompt="test", size="1024x1024",
             quality="auto", background="transparent", n=1, output_format="png"
         )
 

@@ -17,6 +17,7 @@ class GPTImageGenerate:
         return {
             "required": {
                 "api_key": ("STRING", {"default": ""}),
+                "base_url": ("STRING", {"default": "https://api.openai.com/v1"}),
                 "prompt": ("STRING", {"default": "", "multiline": True}),
                 "size": (["1024x1024", "1536x1024", "1024x1536", "auto"],),
                 "quality": (["auto", "low", "medium", "high"],),
@@ -42,10 +43,10 @@ class GPTImageGenerate:
         else:
             raise ValueError("Prompt is empty: at least one text input must be provided")
 
-    def generate(self, api_key, prompt, size, quality, background, n, output_format, external_text=None):
+    def generate(self, api_key, base_url, prompt, size, quality, background, n, output_format, external_text=None):
         final_prompt = self.build_prompt(external_text, prompt)
 
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, base_url=base_url)
         response = client.images.generate(
             model="gpt-image-1",
             prompt=final_prompt,
