@@ -129,10 +129,16 @@ class GPTImageGenerate:
                 raise RuntimeError(f"Image generation failed: {error_msg}")
 
         images = []
-        for url in output_urls:
-            img_resp = requests.get(url, timeout=60)
-            img_resp.raise_for_status()
-            pil_image = Image.open(io.BytesIO(img_resp.content))
+        for output in output_urls:
+            if not output:
+                continue
+            if output.startswith(("http://", "https://")):
+                img_resp = requests.get(output, timeout=60)
+                img_resp.raise_for_status()
+                image_bytes = img_resp.content
+            else:
+                image_bytes = base64.b64decode(output)
+            pil_image = Image.open(io.BytesIO(image_bytes))
             if background == "transparent":
                 pil_image = pil_image.convert("RGBA")
             else:
@@ -140,6 +146,9 @@ class GPTImageGenerate:
             np_array = np.array(pil_image).astype(np.float32) / 255.0
             tensor = torch.from_numpy(np_array)
             images.append(tensor)
+
+        if not images:
+            raise RuntimeError("No valid image URLs returned by the API")
 
         batch = torch.stack(images, dim=0)
         return (batch,)
