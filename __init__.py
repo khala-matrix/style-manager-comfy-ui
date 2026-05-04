@@ -1,4 +1,7 @@
-from .nodes import GPTImageGenerate
+try:
+    from .nodes import GPTImageGenerate
+except ImportError:
+    from nodes import GPTImageGenerate
 
 NODE_CLASS_MAPPINGS = {
     "GPTImageGenerate": GPTImageGenerate,
