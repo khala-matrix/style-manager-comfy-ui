@@ -16,6 +16,10 @@ class GPTImageGenerate:
     CATEGORY = "Style Manager/GPT Image"
 
     @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
@@ -160,6 +164,10 @@ class StyleManagerQuery:
     RETURN_NAMES = ("extracted_parameters", "rendered_prompts", "query", "reasoning")
     FUNCTION = "query"
     CATEGORY = "Style Manager/Query"
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
 
     STYLE_MANAGER_BASE = "http://sandbox.cyber-psychosis.net/sandbox/style-manager-service/api"
 
@@ -353,6 +361,10 @@ class StyleManagerBatchGenerate:
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "generate"
     CATEGORY = "Style Manager/GPT Image"
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
 
     @classmethod
     def INPUT_TYPES(cls):
