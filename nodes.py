@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import time
 
 import numpy as np
@@ -152,3 +153,102 @@ class GPTImageGenerate:
 
         batch = torch.stack(images, dim=0)
         return (batch,)
+
+
+class StyleManagerQuery:
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "query"
+    CATEGORY = "Style Manager/Query"
+
+    STYLE_MANAGER_BASE = "http://sandbox.cyber-psychosis.net/sandbox/style-manager-service/api"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "api_key": ("STRING", {"default": ""}),
+                "openai_api_key": ("STRING", {"default": ""}),
+                "openai_base_url": ("STRING", {"default": "https://api.openai.com/v1"}),
+                "prompt": ("STRING", {"default": "", "multiline": True}),
+            },
+            "optional": {
+                "external_text": ("STRING", {"forceInput": True}),
+            },
+        }
+
+    def query(self, api_key, openai_api_key, openai_base_url, prompt, external_text=None):
+        ext = (external_text or "").strip()
+        loc = (prompt or "").strip()
+        if ext and loc:
+            user_input = ext + "\n" + loc
+        elif ext:
+            user_input = ext
+        elif loc:
+            user_input = loc
+        else:
+            raise ValueError("At least one text input must be provided")
+
+        filters = self._get_filters(api_key)
+        selected = self._select_filters(openai_api_key, openai_base_url, user_input, filters)
+        result = self._query_prompts(api_key, selected)
+        return (json.dumps(result, ensure_ascii=False),)
+
+    def _get_filters(self, api_key):
+        resp = requests.get(
+            f"{self.STYLE_MANAGER_BASE}/v1/prompts/filters",
+            headers={"X-API-Key": api_key},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def _select_filters(self, openai_api_key, openai_base_url, user_input, filters):
+        system_prompt = (
+            "You are a filter selector. Given the user's text and the available filters, "
+            "select the most relevant combination. You MUST only use values from the provided lists.\n\n"
+            "Available filters:\n"
+            f"- scenes: {json.dumps(filters.get('scenes', []), ensure_ascii=False)}\n"
+            f"- tags: {json.dumps(filters.get('tags', []), ensure_ascii=False)}\n"
+            f"- titles: {json.dumps(filters.get('titles', []), ensure_ascii=False)}\n\n"
+            "Respond with ONLY a JSON object (no markdown, no explanation) in this format:\n"
+            '{"scene": "<one scene or null>", "tags": "<comma-separated tags or null>", "q": "<search keyword or null>"}\n'
+            "Rules:\n"
+            "- scene must be one value from scenes list, or null\n"
+            "- tags must be from the tags list, or null\n"
+            "- q must be a substring from the titles list, or null\n"
+            "- Select values most relevant to the user's input\n"
+            "- Use null for fields that are not relevant"
+        )
+
+        client = OpenAI(api_key=openai_api_key, base_url=openai_base_url)
+        response = client.chat.completions.create(
+            model="gpt-5.5",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input},
+            ],
+            temperature=0,
+        )
+
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        return json.loads(content)
+
+    def _query_prompts(self, api_key, selected):
+        params = {"page": 1, "page_size": 20}
+        if selected.get("scene"):
+            params["scene"] = selected["scene"]
+        if selected.get("tags"):
+            params["tags"] = selected["tags"]
+        if selected.get("q"):
+            params["q"] = selected["q"]
+
+        resp = requests.get(
+            f"{self.STYLE_MANAGER_BASE}/v1/prompts",
+            headers={"X-API-Key": api_key},
+            params=params,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
