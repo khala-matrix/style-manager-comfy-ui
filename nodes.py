@@ -156,7 +156,8 @@ class GPTImageGenerate:
 
 
 class StyleManagerQuery:
-    RETURN_TYPES = ("STRING",)
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("extracted_parameters", "rendered_prompts", "query", "reasoning")
     FUNCTION = "query"
     CATEGORY = "Style Manager/Query"
 
@@ -189,9 +190,50 @@ class StyleManagerQuery:
             raise ValueError("At least one text input must be provided")
 
         filters = self._get_filters(api_key)
-        selected = self._select_filters(openai_api_key, openai_base_url, user_input, filters)
-        result = self._query_prompts(api_key, selected)
-        return (json.dumps(result, ensure_ascii=False),)
+        filter_result = self._select_filters(openai_api_key, openai_base_url, user_input, filters)
+        selected = filter_result["query"]
+        reasoning = filter_result["reasoning"]
+
+        prompts_result = self._query_prompts(api_key, selected)
+        items = prompts_result.get("items", [])
+
+        if not items:
+            return (
+                json.dumps([], ensure_ascii=False),
+                json.dumps([], ensure_ascii=False),
+                json.dumps(selected, ensure_ascii=False),
+                reasoning,
+            )
+
+        all_parameters = []
+        all_rendered = []
+
+        for item in items:
+            template_id = item["id"]
+            parameters = item.get("parameters", [])
+
+            extracted = self._extract_parameters(
+                openai_api_key, openai_base_url, user_input, item["template"], parameters
+            )
+            all_parameters.append({
+                "template_id": template_id,
+                "template_title": item.get("title", ""),
+                "parameters": extracted,
+            })
+
+            rendered = self._render_prompt(api_key, template_id, extracted)
+            all_rendered.append({
+                "template_id": template_id,
+                "template_title": item.get("title", ""),
+                "rendered": rendered,
+            })
+
+        return (
+            json.dumps(all_parameters, ensure_ascii=False),
+            json.dumps(all_rendered, ensure_ascii=False),
+            json.dumps(selected, ensure_ascii=False),
+            reasoning,
+        )
 
     def _get_filters(self, api_key):
         resp = requests.get(
@@ -211,7 +253,10 @@ class StyleManagerQuery:
             f"- tags: {json.dumps(filters.get('tags', []), ensure_ascii=False)}\n"
             f"- titles: {json.dumps(filters.get('titles', []), ensure_ascii=False)}\n\n"
             "Respond with ONLY a JSON object (no markdown, no explanation) in this format:\n"
-            '{"scene": "<one scene or null>", "tags": "<comma-separated tags or null>", "q": "<search keyword or null>"}\n'
+            "{\n"
+            '  "reasoning": "<explain why you chose this combination>",\n'
+            '  "query": {"scene": "<one scene or null>", "tags": "<comma-separated tags or null>", "q": "<search keyword or null>"}\n'
+            "}\n\n"
             "Rules:\n"
             "- scene must be one value from scenes list, or null\n"
             "- tags must be from the tags list, or null\n"
@@ -252,3 +297,53 @@ class StyleManagerQuery:
         )
         resp.raise_for_status()
         return resp.json()
+
+    def _extract_parameters(self, openai_api_key, openai_base_url, user_input, template, parameters):
+        param_descriptions = []
+        for p in parameters:
+            desc = p.get("description", "")
+            default = p.get("default", "")
+            line = f"- {p['name']}"
+            if desc:
+                line += f" ({desc})"
+            if default:
+                line += f" [default: {default}]"
+            param_descriptions.append(line)
+
+        system_prompt = (
+            "You are a parameter extractor. Given the user's input text and a prompt template, "
+            "extract values for the template parameters from the user's input.\n\n"
+            f"Template:\n{template}\n\n"
+            f"Parameters to extract:\n" + "\n".join(param_descriptions) + "\n\n"
+            "Respond with ONLY a JSON object mapping parameter names to extracted values.\n"
+            "If a value cannot be extracted from the user's input, use the default value or an empty string.\n"
+            "Example: {\"theme\": \"extracted value\", \"text\": \"extracted value\"}"
+        )
+
+        client = OpenAI(api_key=openai_api_key, base_url=openai_base_url)
+        response = client.chat.completions.create(
+            model="gpt-5.5",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input},
+            ],
+            temperature=0,
+        )
+
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        return json.loads(content)
+
+    def _render_prompt(self, api_key, template_id, params):
+        resp = requests.post(
+            f"{self.STYLE_MANAGER_BASE}/v1/prompts/{template_id}/render",
+            headers={
+                "X-API-Key": api_key,
+                "Content-Type": "application/json",
+            },
+            json={"params": params},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json().get("rendered", "")
