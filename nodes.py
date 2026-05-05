@@ -347,3 +347,52 @@ class StyleManagerQuery:
         )
         resp.raise_for_status()
         return resp.json().get("rendered", "")
+
+
+class StyleManagerBatchGenerate:
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "generate"
+    CATEGORY = "Style Manager/GPT Image"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "rendered_prompts": ("STRING", {"forceInput": True}),
+                "api_key": ("STRING", {"default": ""}),
+                "base_url": ("STRING", {"default": "https://api.openai.com/v1"}),
+                "mode": (["openai_sdk", "gptsapi_async"],),
+                "size": (["1024x1024", "1536x1024", "1024x1536", "auto"],),
+                "aspect_ratio": (["1:1", "16:9", "9:16", "4:3", "3:4"],),
+                "quality": (["auto", "low", "medium", "high"],),
+                "background": (["auto", "transparent", "opaque"],),
+                "output_format": (["png", "webp"],),
+                "poll_interval": ("INT", {"default": 3, "min": 1, "max": 30}),
+                "timeout": ("INT", {"default": 120, "min": 30, "max": 600}),
+            },
+        }
+
+    def generate(self, rendered_prompts, api_key, base_url, mode, size, aspect_ratio, quality, background, output_format, poll_interval, timeout):
+        prompts_data = json.loads(rendered_prompts)
+        if not prompts_data:
+            raise ValueError("No rendered prompts to process")
+
+        all_images = []
+        generator = GPTImageGenerate()
+
+        for item in prompts_data:
+            prompt_text = item["rendered"] if isinstance(item, dict) else item
+
+            if mode == "openai_sdk":
+                (batch,) = generator._generate_openai(
+                    api_key, base_url, prompt_text, size, quality, background, 1, output_format
+                )
+            else:
+                (batch,) = generator._generate_gptsapi(
+                    api_key, base_url, prompt_text, aspect_ratio, quality, background, 1, output_format, poll_interval, timeout
+                )
+
+            all_images.append(batch)
+
+        result = torch.cat(all_images, dim=0)
+        return (result,)
